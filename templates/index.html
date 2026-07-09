@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>StudentHub</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0b1120;
+            color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        h1 { color: #4ade80; }
+        .status {
+            margin-top: 1rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            background: #1e293b;
+            font-size: 1.1rem;
+        }
+        .connected { color: #4ade80; }
+        .failed { color: #f87171; }
+    </style>
+</head>
+<body>
+    <h1>StudentHub is LIVE</h1>
+    <div class="status">
+        Database status:
+        <span class="{{ 'connected' if db_status == 'Connected' else 'failed' }}">
+            {{ db_status }}
+        </span>
+    </div>
+</body>
+</html>
