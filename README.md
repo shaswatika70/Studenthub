@@ -1,9 +1,11 @@
 StudentHub — AWS DevOps CI/CD Project
+
 Flask app → Docker → ECR → ECS Fargate → ALB → RDS, deployed automatically on every git push via CodePipeline + CodeBuild, with CloudWatch monitoring and SNS alerts.
 
 Use this alongside the code files in this folder: app.py, templates/index.html, requirements.txt, Dockerfile, buildspec.yml, taskdef.json.
 
 Day 1 — IAM + VPC
+
 1.1 Create an IAM admin user (never work as root)
 Console → IAM → Users → Create user
 Username: devops-admin
@@ -11,15 +13,19 @@ Check Provide user access to AWS Management Console
 Set a custom password, uncheck "must create new password"
 Attach policies directly → AdministratorAccess → Create user
 Save the console sign-in URL shown after creation
+
 1.2 Enable MFA
 Click the devops-admin user → Security credentials tab
 Assign MFA device → use Google Authenticator (or similar) on your phone
+
 1.3 Create CLI access keys
 Same tab → Access keys → Create access key
 Use case: Command Line Interface (CLI)
 Download the .csv and store it somewhere safe (never commit it to Git)
+
 1.4 Switch off root
 Log out of the root account. From now on, log in as devops-admin.
+
 1.5 Create the VPC
 Console → VPC → Create VPC
 Select VPC and more (auto-creates subnets/routing for you)
@@ -31,11 +37,14 @@ NAT Gateways: None (keeps this free — add for a real production setup)
 VPC endpoints: None → Create VPC
 You now have 2 public subnets (for the ALB), 2 private subnets (for RDS/ECS), an Internet Gateway, and route tables — all wired automatically.
 
+
 Day 2 — RDS + Flask app running locally
+
 2.1 Security group for RDS
 VPC Console → Security Groups → Create security group
 Name: rds-sg, VPC: studenthub-vpc
 Inbound rule: Type PostgreSQL, Port 5432, Source: your IP for now (you'll restrict this to the ECS security group once it exists)
+
 2.2 Create the RDS instance
 Console → RDS → Create database
 Method: Standard create · Engine: PostgreSQL · Version: 15.x
@@ -48,6 +57,7 @@ Public access: No (important — RDS should never be public)
 Security group: rds-sg
 Initial database name: studenthub
 Create database — takes 5–10 minutes to become "Available"
+
 2.3 Run the Flask app locally
 cd studenthub
 python -m venv venv
@@ -69,7 +79,10 @@ git commit -m "Initial StudentHub app"
 git branch -M main
 git remote add origin https://github.com/<yourname>/studenthub.git
 git push -u origin main
+
+
 Day 3 — Docker + ECR + ECS Fargate
+
 3.1 Test the Docker image locally
 docker build -t studenthub-app .
 docker run -p 5000:5000 \
@@ -82,19 +95,22 @@ Visit http://localhost:5000 again to confirm the containerized app works.
 Console → ECR → Create repository
 Visibility: Private · Name: studenthub-app → Create
 Note the URI, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/studenthub-app
+
 3.3 Push your image manually (first time only — CodeBuild automates this later)
 aws ecr get-login-password --region <region> | \
   docker login --username AWS --password-stdin <ECR_URI>
-
 docker tag studenthub-app:latest <ECR_URI>:latest
 docker push <ECR_URI>:latest
+
 3.4 Create the ECS cluster
 Console → ECS → Create Cluster
 Name: studenthub-cluster · Infrastructure: AWS Fargate → Create
+
 3.5 Create the task definition
 Use taskdef.json in this folder as your template — replace <ACCOUNT_ID>, <ECR_URI>, <RDS_ENDPOINT>, and <REGION> with your real values, then either paste it in via the console's JSON editor or register it via CLI:
 aws ecs register-task-definition --cli-input-json file://taskdef.json
 Store the DB password in Secrets Manager (studenthub-db-password) rather than hardcoding it — the task definition already references it.
+
 3.6 Create the ECS service + ALB
 Cluster → Services tab → Create
 Launch type: Fargate · Task definition: studenthub-task
@@ -107,7 +123,9 @@ Target group: studenthub-tg, port 5000, health check path /health
 Create Service
 Once healthy, the ALB's DNS name is your public URL.
 
+
 Day 4 — CodeBuild (build & test in isolation)
+
 4.1 buildspec.yml
 Already included in this folder — CodeBuild reads it automatically.
 
@@ -125,13 +143,17 @@ AWS_REGION = your region, e.g. us-east-1
 Buildspec: Use a buildspec file (it'll find buildspec.yml in the repo root)
 Artifacts: Amazon S3 → create bucket studenthub-artifacts
 Create build project
+
 4.3 Grant ECR permissions
 IAM → Roles → find codebuild-studenthub-build-service-role
 Add permissions → attach AmazonEC2ContainerRegistryPowerUser
+
 4.4 Test it standalone
 CodeBuild project → Start build
 Confirm in the logs: image builds, pushes to ECR, and imagedefinitions.json is written — all before wiring up CodePipeline, so you know this stage works in isolation.
+
 Day 5 — CodePipeline + CloudWatch + SNS + full end-to-end test
+
 5.1 Create the pipeline
 Console → CodePipeline → Create pipeline
 Name: studenthub-pipeline · New service role (auto-created)
@@ -154,17 +176,20 @@ Create pipeline — it runs immediately.
 Console → CloudWatch → Dashboards → Create dashboard
 Name: StudentHub-Dashboard
 Add widgets: ECS CPU utilization, ECS memory utilization, ALB request count, RDS database connections
+
 5.3 SNS alerts
 Console → SNS → Topics → Create topic (Standard)
 Name: studenthub-alerts
 Create subscription: Protocol Email, your email address
 Confirm the subscription from the email you receive
+
 5.4 CloudWatch alarm
 CloudWatch → Alarms → Create alarm
 Metric: ECS → studenthub-cluster → CPUUtilization
 Threshold: greater than 80%
 Action: notify studenthub-alerts
 Name: High-CPU-Alert
+
 5.5 Full end-to-end demo (this is the part to show your evaluator)
 Change something in app.py on your laptop (e.g. edit the homepage message).
 git add . && git commit -m "Update homepage"
@@ -177,4 +202,5 @@ Notes / gotchas worth knowing before you present this
 RDS must stay private — "Public access: No" is not optional; it's the single most common security mistake in student AWS projects.
 Health check path (/health) matters — if the ALB target group checks / instead and your DB connection is briefly down, ECS will kill healthy containers thinking they're unhealthy.
 Secrets Manager, not plaintext env vars, for the DB password — this is an easy thing to point out in a viva/demo as a security best practice you deliberately followed.
+
 Cost control: Fargate + ALB + NAT Gateway (if you add one later) are the main things that cost money beyond free tier. Delete the ECS service, ALB, and RDS instance when you're done demoing to avoid surprise charges.
